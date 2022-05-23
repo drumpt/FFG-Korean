@@ -16,11 +16,7 @@ def main():
     parser.add_argument("--root_dir")
     args = parser.parse_args()
 
-    print(args.root_dir)
     ttffiles = list(Path(args.root_dir).rglob("*.ttf"))
-
-    print(ttffiles[68])
-    ttffiles = ttffiles[69:]
 
     for ttffile in tqdm(ttffiles):
         filename = ttffile.stem

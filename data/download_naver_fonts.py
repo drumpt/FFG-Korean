@@ -7,6 +7,9 @@ from sklearn.model_selection import train_test_split
 
 def download(url, out_path="."):
     r = requests.get(url)
+
+    if not os.path.exists(out_path):
+        os.makedirs(out_path)
     with open(out_path, 'wb') as f:
         f.write(r.content)
 
@@ -26,7 +29,6 @@ if __name__ == "__main__":
     train_font_list, valid_font_list = train_test_split(font_list, test_size=0.1, random_state=42)
 
     print(train_font_list, len(train_font_list))
-    print("\n\n\n")
     print(valid_font_list, len(valid_font_list))
 
     for train_font in train_font_list:
