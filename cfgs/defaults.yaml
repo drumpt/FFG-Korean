@@ -1,7 +1,7 @@
 use_ddp: False
-port:
+port: 
 
-batch_size: 2
+batch_size: 16
 
 resume: 
 force_resume: False
@@ -84,7 +84,7 @@ indp_fact_w: 1.0
 
 # etc
 save: all-last
-print_freq: 1000
+print_freq: 500
 val_freq: 10000
 save_freq: 50000
 tb_freq: 100

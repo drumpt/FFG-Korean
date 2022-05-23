@@ -4,13 +4,14 @@ Copyright (c) 2021-present NAVER Corp.
 MIT license
 """
 
+import os
 import json
 import sys
 from pathlib import Path
 import argparse
+from datetime import datetime
 
 import torch
-
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
@@ -99,8 +100,12 @@ def train(args, cfg, ddp_gpu=-1):
 
     image_scale = 0.5
     image_path = cfg.work_dir / "images"
-    writer = utils.DiskWriter(image_path, scale=image_scale)
-    cfg.tb_freq = -1
+    # writer = utils.DiskWriter(image_path, scale=image_scale)
+
+    tb_path = os.path.join(cfg.tensorboard_dir, datetime.now().strftime("%m_%d_%Y_%H_%M_%S"))
+    writer = utils.TBDiskWriter(tb_path, image_path, scale=image_scale)
+
+    # cfg.tb_freq = -1
 
     args_str = dump_args(args)
     if is_main_worker(ddp_gpu):
