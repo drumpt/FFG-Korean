@@ -30,7 +30,9 @@ def get_trn_loader(cfg, primals, decomposition, transform, use_ddp=False, **kwar
 
 
 def get_val_loader(cfg, transform, **kwargs):
-    char_filter = [chr(i) for i in range(int("4E00", 16), int("A000", 16))]
+    # char_filter = [chr(i) for i in range(int("4E00", 16), int("A000", 16))] # chinese
+    char_filter = [chr(i) for i in range(int("AC00", 16), int("D7B0", 16))] # korean
+
     dset = TTFValDataset(
         char_filter=char_filter,
         transform=transform,

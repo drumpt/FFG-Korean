@@ -19,6 +19,9 @@ def main():
     print(args.root_dir)
     ttffiles = list(Path(args.root_dir).rglob("*.ttf"))
 
+    print(ttffiles[68])
+    ttffiles = ttffiles[69:]
+
     for ttffile in tqdm(ttffiles):
         filename = ttffile.stem
         dirname = ttffile.parent

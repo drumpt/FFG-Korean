@@ -1,7 +1,7 @@
 use_ddp: False
 port:
 
-batch_size: 8
+batch_size: 2
 
 resume: 
 force_resume: False
@@ -15,7 +15,7 @@ n_workers: 8
 adam_betas: [0.0, 0.9]
 init: kaiming
 
-language: chn
+# language: chn
 decomposition:
 primals:
 
