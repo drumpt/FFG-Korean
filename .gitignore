@@ -2,3 +2,4 @@
 data/**/*.ttf
 data/**/*.txt
 result/
+previous_results/
