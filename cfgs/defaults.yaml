@@ -1,12 +1,12 @@
 use_ddp: False
 port: 
 
-batch_size: 16
+batch_size: 4
 
 resume: 
 force_resume: False
-work_dir: ./result
-max_iter: 800000
+work_dir: ./result_postnet
+max_iter: 300000
 seed: 2
 g_lr: 2e-4
 d_lr: 1e-3
@@ -57,6 +57,7 @@ g_args:
     activ: relu
     pad_type: zero
     out: sigmoid
+    use_postnet: True
 d_args:
   w_norm: spectral
   activ: relu

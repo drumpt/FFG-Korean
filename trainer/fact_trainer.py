@@ -40,9 +40,16 @@ class FactTrainer(BaseTrainer):
                                      "ac_s", "ac_c", "cross_ac_s", "cross_ac_c",
                                      "ac_gen_s", "ac_gen_c", "cross_ac_gen_s", "cross_ac_gen_c")
         # discriminator stats
-        discs = utils.AverageMeters("real_font", "real_uni", "fake_font", "fake_uni",
-                                    "real_font_acc", "real_uni_acc",
-                                    "fake_font_acc", "fake_uni_acc")
+        if self.cfg.g_args.dec.use_postnet:
+            discs = utils.AverageMeters("real_font", "real_uni", "fake_font", "fake_uni", "before_fake_font", "before_fake_uni",
+                                        "real_font_acc", "real_uni_acc",
+                                        "fake_font_acc", "fake_uni_acc",
+                                        "before_fake_font_acc", "before_fake_uni_acc")
+        else:
+            discs = utils.AverageMeters("real_font", "real_uni", "fake_font", "fake_uni",
+                                        "real_font_acc", "real_uni_acc",
+                                        "fake_font_acc", "fake_uni_acc")
+
         # etc stats
         stats = utils.AverageMeters("B", "ac_acc_s", "ac_acc_c", "ac_gen_acc_s", "ac_gen_acc_c")
 
@@ -62,6 +69,9 @@ class FactTrainer(BaseTrainer):
             char_imgs = batch["char_imgs"].cuda()
             char_fids = batch["char_fids"].cuda()
             char_decs = batch["char_decs"]
+
+            print(style_imgs)
+            print(style_fids)
 
             trg_imgs = batch["trg_imgs"].cuda()
             trg_fids = batch["trg_fids"].cuda()
@@ -96,7 +106,11 @@ class FactTrainer(BaseTrainer):
             mean_style_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_s)).mean(1) for k, v in style_facts_s.items()}
             mean_char_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_c)).mean(1) for k, v in char_facts_c.items()}
             gen_feats = self.gen.defactorize([mean_style_facts, mean_char_facts])
-            gen_imgs = self.gen.decode(gen_feats)
+
+            if self.cfg.g_args.dec.use_postnet:
+                before_gen_imgs, gen_imgs = self.gen.decode(gen_feats)
+            else:
+                gen_imgs = self.gen.decode(gen_feats)
 
             stats.updates({
                 "B": B,
@@ -109,6 +123,10 @@ class FactTrainer(BaseTrainer):
             fake_font, fake_uni = self.disc(gen_imgs.detach(), trg_fids, trg_cids)
             self.add_gan_d_loss([real_font, real_uni], [fake_font, fake_uni])
 
+            if self.cfg.g_args.dec.use_postnet:
+                before_fake_font, before_fake_uni = self.disc(before_gen_imgs.detach(), trg_fids, trg_cids)
+                self.add_gan_d_loss([real_font, real_uni], [before_fake_font, before_fake_uni])
+
             self.d_optim.zero_grad()
             self.d_backward()
             self.d_optim.step()
@@ -117,8 +135,14 @@ class FactTrainer(BaseTrainer):
                 gen_imgs, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
             )
             self.add_gan_g_loss(fake_font, fake_uni)
-
             self.add_fm_loss(real_feats, fake_feats)
+
+            if self.cfg.g_args.dec.use_postnet:
+                before_fake_font, before_fake_uni, *before_fake_feats = self.disc(
+                    before_gen_imgs, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
+                )
+                self.add_gan_g_loss(before_fake_font, before_fake_uni)
+                self.add_fm_loss(real_feats, before_fake_feats)
 
             def racc(x):
                 return (x > 0.).float().mean().item()
@@ -126,17 +150,35 @@ class FactTrainer(BaseTrainer):
             def facc(x):
                 return (x < 0.).float().mean().item()
 
-            discs.updates({
-                "real_font": real_font.mean().item(),
-                "real_uni": real_uni.mean().item(),
-                "fake_font": fake_font.mean().item(),
-                "fake_uni": fake_uni.mean().item(),
+            if self.cfg.g_args.dec.use_postnet:
+                discs.updates({
+                    "real_font": real_font.mean().item(),
+                    "real_uni": real_uni.mean().item(),
+                    "fake_font": fake_font.mean().item(),
+                    "fake_uni": fake_uni.mean().item(),
+                    "before_fake_font": before_fake_font.mean().item(),
+                    "before_fake_uni": before_fake_uni.mean().item(),
 
-                'real_font_acc': racc(real_font),
-                'real_uni_acc': racc(real_uni),
-                'fake_font_acc': facc(fake_font),
-                'fake_uni_acc': facc(fake_uni)
-            }, B)
+                    'real_font_acc': racc(real_font),
+                    'real_uni_acc': racc(real_uni),
+                    'fake_font_acc': facc(fake_font),
+                    'fake_uni_acc': facc(fake_uni),
+                    'before_fake_font_acc': facc(before_fake_font),
+                    'before_fake_uni_acc': facc(before_fake_uni),
+                }, B)
+                self.add_pixel_loss(before_gen_imgs, trg_imgs)
+            else:
+                discs.updates({
+                    "real_font": real_font.mean().item(),
+                    "real_uni": real_uni.mean().item(),
+                    "fake_font": fake_font.mean().item(),
+                    "fake_uni": fake_uni.mean().item(),
+
+                    'real_font_acc': racc(real_font),
+                    'real_uni_acc': racc(real_uni),
+                    'fake_font_acc': facc(fake_font),
+                    'fake_uni_acc': facc(fake_uni)
+                }, B)
 
             self.add_pixel_loss(gen_imgs, trg_imgs)
 
