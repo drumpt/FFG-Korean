@@ -5,7 +5,7 @@ batch_size: 4
 
 resume: 
 force_resume: False
-work_dir: ./result_postnet
+work_dir: ./result
 max_iter: 300000
 seed: 2
 g_lr: 2e-4
@@ -21,7 +21,7 @@ primals:
 
 dset_aug:
   normalize: True
-  random_affine: False
+  random_affine: True
 
 dset:
   train:
@@ -57,7 +57,7 @@ g_args:
     activ: relu
     pad_type: zero
     out: sigmoid
-    use_postnet: True
+    use_postnet: False
 d_args:
   w_norm: spectral
   activ: relu
@@ -70,6 +70,8 @@ ac_args:
   pad_type: zero
   conv_dropout: 0.3
   clf_dropout: 0.2
+  use_contrastive_learning: True
+  temperature: 0.07
 
 # losses
 pixel_loss_type: l1

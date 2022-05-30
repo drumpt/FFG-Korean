@@ -51,9 +51,9 @@ def setup_args_and_config():
 def setup_transforms(cfg):
     if cfg.dset_aug.random_affine:
         aug_transform = [
-            transforms.ToPILImage(),
+            # transforms.ToPILImage(),
             transforms.RandomAffine(
-                degrees=10, translate=(0.03, 0.03), scale=(0.9, 1.1), shear=10, fillcolor=255
+                degrees=10, translate=(0.03, 0.03), scale=(0.9, 1.1), shear=10, fill=255
             )
         ]
     else:

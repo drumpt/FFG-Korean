@@ -2,13 +2,13 @@ use_ddp: True   # whether to use DataDistributedParallel, for multi-gpus.
 port: 9126 # the port for the DataDistributedParallel training.
 
 resume:
-work_dir: ./result   # the directory to save checkpoints, validation images, and the log.
+work_dir: ./result_cl   # the directory to save checkpoints, validation images, and the log.
 
 language: kor
 decomposition: data/korean_decomposition.json   # path to the "decomposition rule" file.
 primals: data/korean_primals.json   # path to the "primals" file.
 
-tensorboard_dir: /home/server08/changhun_workspace/FFG-Korean/result/tensorboard_log
+tensorboard_dir: /home/server08/changhun_workspace/FFG-Korean/result_cl/tensorboard_log
 
 dset:   # leave blank
   train:   # leave blank
