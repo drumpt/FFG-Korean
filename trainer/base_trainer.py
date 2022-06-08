@@ -100,6 +100,13 @@ class BaseTrainer:
 
         return loss
 
+    def add_consistent_loss(self, out, target):
+        loss = self.add_loss(
+            (out, target), self.g_losses, "consistent", self.cfg["consistent_w"], F.l1_loss
+        )
+
+        return loss
+
     def add_gan_g_loss(self, *fakes):
         loss = self.add_loss(
             fakes, self.g_losses, "gen", self.cfg["gan_w"], g_crit

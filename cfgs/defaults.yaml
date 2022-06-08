@@ -1,7 +1,7 @@
 use_ddp: False
 port: 
 
-batch_size: 16
+batch_size: 4
 
 resume: 
 force_resume: False
@@ -15,7 +15,7 @@ n_workers: 8
 adam_betas: [0.0, 0.9]
 init: kaiming
 
-# language: chn
+# language: kor
 decomposition:
 primals:
 
@@ -63,6 +63,7 @@ d_args:
   gap_activ: relu
   pad_type: zero
   res_scale_var: False
+  patchgan: True
 ac_args:
   norm: in
   activ: relu
@@ -81,6 +82,10 @@ ac_gen_w: 1.0
 ac_cross_w: 1.0
 indp_exp_w: 1.0
 indp_fact_w: 1.0
+
+use_consistent_loss: False
+consistent_w: 0.1
+no_ground_truth: False
 
 # etc
 save: all-last

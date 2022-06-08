@@ -71,6 +71,7 @@ class CustomDiscriminator(nn.Module):
             feats.append(x)
 
         x = self.gap(x)  # final features
+
         ret = self.projD(x, font_indice, char_indice)
 
         if out_feats == 'all':
@@ -80,7 +81,7 @@ class CustomDiscriminator(nn.Module):
         return ret
 
 
-def disc_builder(C, n_fonts, n_chars, activ='relu', gap_activ='relu', w_norm='spectral',
+def disc_builder(C, n_fonts, n_chars, patchgan=False, activ='relu', gap_activ='relu', w_norm='spectral',
                  pad_type='reflect', res_scale_var=False):
     ConvBlk = partial(ConvBlock, w_norm=w_norm, activ=activ, pad_type=pad_type)
     ResBlk = partial(
@@ -96,16 +97,22 @@ def disc_builder(C, n_fonts, n_chars, activ='relu', gap_activ='relu', w_norm='sp
     ]
 
     gap_activ = activ_dispatch(gap_activ)
-    gaps = [
-        gap_activ(),
-        nn.AdaptiveAvgPool2d(1)
-    ]
+
+    if not patchgan:
+        gaps = [
+            gap_activ()
+        ]
+    else:
+        gaps = [
+            gap_activ(),
+            nn.AdaptiveAvgPool2d(1)
+        ]
+
     projD_C_in = feats[-1].C_out
 
     feats = nn.ModuleList(feats)
     gap = nn.Sequential(*gaps)
     projD = ProjectionDiscriminator(projD_C_in, n_fonts, n_chars, w_norm=w_norm)
-
     disc = CustomDiscriminator(feats, gap, projD)
 
     return disc

@@ -36,13 +36,19 @@ class FactTrainer(BaseTrainer):
             self.disc.train()
 
         # loss stats
-        losses = utils.AverageMeters("g_total", "pixel", "disc", "gen", "fm", "indp_exp", "indp_fact",
-                                     "ac_s", "ac_c", "cross_ac_s", "cross_ac_c",
-                                     "ac_gen_s", "ac_gen_c", "cross_ac_gen_s", "cross_ac_gen_c")
+        if not self.cfg.use_consistent_loss:
+            losses = utils.AverageMeters("g_total", "pixel", "disc", "gen", "fm", "indp_exp", "indp_fact",
+                                    "ac_s", "ac_c", "cross_ac_s", "cross_ac_c",
+                                    "ac_gen_s", "ac_gen_c", "cross_ac_gen_s", "cross_ac_gen_c")
+        else:
+            losses = utils.AverageMeters("g_total", "pixel", "consistent", "disc", "gen", "fm", "indp_exp", "indp_fact",
+                                    "ac_s", "ac_c", "cross_ac_s", "cross_ac_c",
+                                    "ac_gen_s", "ac_gen_c", "cross_ac_gen_s", "cross_ac_gen_c")
         # discriminator stats
         discs = utils.AverageMeters("real_font", "real_uni", "fake_font", "fake_uni",
                                     "real_font_acc", "real_uni_acc",
                                     "fake_font_acc", "fake_uni_acc")
+
         # etc stats
         stats = utils.AverageMeters("B", "ac_acc_s", "ac_acc_c", "ac_gen_acc_s", "ac_gen_acc_c")
 
@@ -59,6 +65,7 @@ class FactTrainer(BaseTrainer):
             style_imgs = batch["style_imgs"].cuda()
             style_fids = batch["style_fids"].cuda()
             style_decs = batch["style_decs"]
+
             char_imgs = batch["char_imgs"].cuda()
             char_fids = batch["char_fids"].cuda()
             char_decs = batch["char_decs"]
@@ -91,7 +98,7 @@ class FactTrainer(BaseTrainer):
                 [style_facts_s["skip"], style_facts_c["skip"]],
                 [char_facts_s["last"], char_facts_c["last"]],
                 [char_facts_s["skip"], char_facts_c["skip"]],
-                                  )
+            )
 
             mean_style_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_s)).mean(1) for k, v in style_facts_s.items()}
             mean_char_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_c)).mean(1) for k, v in char_facts_c.items()}
@@ -102,23 +109,84 @@ class FactTrainer(BaseTrainer):
                 "B": B,
             })
 
-            real_font, real_uni, *real_feats = self.disc(
-                trg_imgs, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
-            )
+            if self.cfg.no_ground_truth:
+                self.cfg.use_consistent_loss = True
+                self.cfg.pixel_w = 0
 
-            fake_font, fake_uni = self.disc(gen_imgs.detach(), trg_fids, trg_cids)
-            self.add_gan_d_loss([real_font, real_uni], [fake_font, fake_uni])
+                fake_font, fake_uni = self.disc(gen_imgs.detach(), trg_fids, trg_cids)
+
+                for style_img in style_imgs.permute(1, 0, 2, 3, 4):
+                    for char_img in char_imgs.permute(1, 0, 2, 3, 4):
+                        style_font, _, *style_feats = self.disc(
+                            style_img, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
+                        )
+                        _, char_uni, *char_feats = self.disc(
+                            char_img, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
+                        )
+
+                        self.add_gan_d_loss([style_font, char_uni], [fake_font, fake_uni])
+            else:
+                real_font, real_uni, *real_feats = self.disc(
+                    trg_imgs, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
+                )
+                fake_font, fake_uni = self.disc(gen_imgs.detach(), trg_fids, trg_cids)
+
+                self.add_gan_d_loss([real_font, real_uni], [fake_font, fake_uni])
 
             self.d_optim.zero_grad()
             self.d_backward()
             self.d_optim.step()
 
-            fake_font, fake_uni, *fake_feats = self.disc(
-                gen_imgs, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
-            )
-            self.add_gan_g_loss(fake_font, fake_uni)
+            if self.cfg.no_ground_truth:
+                style_font_list, char_uni_list = [], []
 
-            self.add_fm_loss(real_feats, fake_feats)
+                fake_font, fake_uni, *fake_feats = self.disc(
+                    gen_imgs.detach(), trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
+                )
+                self.add_gan_g_loss(fake_font, fake_uni)
+
+                for style_img in style_imgs.permute(1, 0, 2, 3, 4):
+                    style_font, _, *style_feats = self.disc(
+                        style_img, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
+                    )
+                    self.add_fm_loss(style_feats, fake_feats)
+    
+                    # for logging
+                    style_font_list.append(style_font)
+
+                for char_img in char_imgs.permute(1, 0, 2, 3, 4):
+                    _, char_uni, *char_feats = self.disc(
+                        char_img, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
+                    )
+                    self.add_fm_loss(char_feats, fake_feats)
+
+                    # for logging
+                    char_uni_list.append(char_uni)
+            else:
+                real_font, real_uni, *real_feats = self.disc(
+                    trg_imgs, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
+                )
+                fake_font, fake_uni, *fake_feats = self.disc(
+                    gen_imgs, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
+                )
+                self.add_gan_g_loss(fake_font, fake_uni)
+                self.add_fm_loss(real_feats, fake_feats)
+
+            if self.cfg.use_consistent_loss:
+                gen_style_feats = self.gen.encode(torch.stack([gen_imgs] * n_s, dim=0).flatten(0, 1))
+                gen_char_feats = self.gen.encode(torch.stack([gen_imgs] * n_c, dim=0).flatten(0, 1))
+
+                gen_style_facts_s = self.gen.factorize(gen_style_feats, 0)
+                gen_char_facts_c = self.gen.factorize(gen_char_feats, 1)
+
+                gen_mean_style_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_s)).mean(1) for k, v in gen_style_facts_s.items()}
+                gen_mean_char_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_c)).mean(1) for k, v in gen_char_facts_c.items()}
+
+                for gen_mean_style_fact, mean_style_fact in zip(gen_mean_style_facts.values(), mean_style_facts.values()):
+                    self.add_consistent_loss(gen_mean_style_fact, mean_style_fact)
+
+                for gen_mean_char_fact, mean_char_fact in zip(gen_mean_char_facts.values(), mean_char_facts.values()):
+                    self.add_consistent_loss(gen_mean_char_fact, mean_char_fact)
 
             def racc(x):
                 return (x > 0.).float().mean().item()
@@ -126,17 +194,30 @@ class FactTrainer(BaseTrainer):
             def facc(x):
                 return (x < 0.).float().mean().item()
 
-            discs.updates({
-                "real_font": real_font.mean().item(),
-                "real_uni": real_uni.mean().item(),
-                "fake_font": fake_font.mean().item(),
-                "fake_uni": fake_uni.mean().item(),
+            if self.cfg.no_ground_truth:
+                discs.updates({
+                    "real_font": torch.cat(style_font_list).mean().item(),
+                    "real_uni": torch.cat(char_uni_list).mean().item(),
+                    "fake_font": fake_font.mean().item(),
+                    "fake_uni": fake_uni.mean().item(),
 
-                'real_font_acc': racc(real_font),
-                'real_uni_acc': racc(real_uni),
-                'fake_font_acc': facc(fake_font),
-                'fake_uni_acc': facc(fake_uni)
-            }, B)
+                    'real_font_acc': racc(torch.cat(style_font_list)),
+                    'real_uni_acc': racc(torch.cat(char_uni_list)),
+                    'fake_font_acc': facc(fake_font),
+                    'fake_uni_acc': facc(fake_uni)
+                }, B)
+            else:
+                discs.updates({
+                    "real_font": real_font.mean().item(),
+                    "real_uni": real_uni.mean().item(),
+                    "fake_font": fake_font.mean().item(),
+                    "fake_uni": fake_uni.mean().item(),
+
+                    'real_font_acc': racc(real_font),
+                    'real_uni_acc': racc(real_uni),
+                    'fake_font_acc': facc(fake_font),
+                    'fake_uni_acc': facc(fake_uni)
+                }, B)
 
             self.add_pixel_loss(gen_imgs, trg_imgs)
 
@@ -308,6 +389,8 @@ class FactTrainer(BaseTrainer):
             'train/indp_exp_loss': losses.indp_exp.val,
             'train/indp_fact_loss': losses.indp_fact.val,
         }
+        if self.cfg.use_consistent_loss:
+            tag_scalar_dic["train/consistent_loss"] = losses.consistent.val
 
         if self.disc is not None:
             tag_scalar_dic.update({
