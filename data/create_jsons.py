@@ -49,9 +49,12 @@ def decompose(char):
     return char_id
 
 
-def get_all_chars(txt_dir):
+def get_all_chars(txt_dir, gen=False):
     with open(txt_dir) as f:
-        all_chars = f.readlines()[0]
+        if not gen:
+            all_chars = f.readlines()[0]
+        else:
+            all_chars = f.read().splitlines()
     return all_chars
 
 
@@ -81,10 +84,20 @@ def save_primal_json(out_dir):
         f.write(json.dumps(primal_list))
 
 
+def save_gen_json(txt_dir, out_dir):
+    gen_list = get_all_chars(txt_dir, gen=True)
+
+    with open(out_dir, "w") as f:
+        f.write(json.dumps(gen_list))
+
+
 if __name__ == "__main__":
     txt_dir = "/home/server17/changhun_workspace/AI604/mxfont/data/ttfs/train/나눔손글씨 중학생.txt"
     decomposition_out_dir = "/home/server17/changhun_workspace/AI604/mxfont/data/korean_decomposition.json"
     primals_out_dir = "/home/server17/changhun_workspace/AI604/mxfont/data/korean_primals.json"
+    gen_txt_dir = "/home/server08/changhun_workspace/FFG-Korean/data/val_content.txt"
+    gen_out_dir = "korean_gen.json"
 
     save_decomposition_json(txt_dir, decomposition_out_dir)
     save_primal_json(primals_out_dir)
+    save_gen_json(gen_txt_dir, gen_out_dir)

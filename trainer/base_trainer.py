@@ -87,9 +87,17 @@ class BaseTrainer:
         return
 
     def add_loss(self, inputs, l_dict, l_key, weight, crit=F.l1_loss):
+        # print(f"inputs : {inputs}")
+        # print(f"l_dict : {l_dict}")
+        # print(f"l_key : {l_key}")
+        # print(f"weight : {weight}")
+        # print(f"crit : {crit}")
+
         loss = l_dict.get(l_key, 0.)
         loss += crit(*inputs) * weight
         l_dict[l_key] = loss
+
+        # print(f"loss : {loss}")
 
         return loss
 
@@ -98,6 +106,12 @@ class BaseTrainer:
             (out, target), self.g_losses, "pixel", self.cfg["pixel_w"], F.l1_loss
         )
 
+        return loss
+
+    def add_consistent_loss(self, out, target):
+        loss = self.add_loss(
+            (out, target), self.g_losses, "consistent", self.cfg["consistent_w"], F.l1_loss
+        )
         return loss
 
     def add_gan_g_loss(self, *fakes):

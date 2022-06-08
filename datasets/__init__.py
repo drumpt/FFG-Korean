@@ -8,7 +8,7 @@ import torch
 
 from .imagefolder_dataset import ImageTestDataset
 from .ttf_dataset import TTFTrainDataset, TTFValDataset
-from .ttf_utils import get_filtered_chars, read_font, render
+from .ttf_utils import get_defined_chars, get_filtered_chars, read_font, render
 from torch.utils.data import DataLoader
 
 

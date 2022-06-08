@@ -5,6 +5,12 @@ MIT license
 """
 
 import torch
+import torch.nn as nn
+import numpy as np
+
+from skimage.metrics import structural_similarity
+from lpips_pytorch import lpips
+
 import utils
 
 
@@ -54,3 +60,26 @@ class Evaluator:
             ret += (trgs,)
 
         return ret
+
+
+class Metric(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.l1_loss = nn.L1Loss().cuda()
+
+    def forward(self, gt_batch, gen_batch):
+        l1_loss_batch, score_RMSE_batch, ssim_batch, score_lpips_batch = [], [], [], []
+
+        for gt_img, gen_img in zip(gt_batch, gen_batch):
+            l1_loss = self.l1_loss(gt_img, gen_img)
+            score_RMSE = torch.sqrt(torch.mean((gt_img - gen_img) ** 2))
+            ssim = structural_similarity(np.array(gt_img.squeeze().detach().cpu() * 255), np.array(gen_img.squeeze().detach().cpu() * 255))
+            score_lpips = lpips(gt_img, gen_img, net_type='alex', version='0.1')
+
+            l1_loss_batch.append(l1_loss.item())
+            score_RMSE_batch.append(score_RMSE.item())
+            ssim_batch.append(ssim.item())
+            score_lpips_batch.append(score_lpips.item())
+
+        return l1_loss_batch, score_RMSE_batch, ssim_batch, score_lpips_batch

@@ -88,11 +88,11 @@ def disc_builder(C, n_fonts, n_chars, activ='relu', gap_activ='relu', w_norm='sp
     )
     feats = [
         ConvBlk(1, C, stride=2, activ='none'),  # 64x64 (stirde==2)
-        ResBlk(C*1, C*2, downsample=True),    # 32x32
-        ResBlk(C*2, C*4, downsample=True),    # 16x16
-        ResBlk(C*4, C*8, downsample=True),    # 8x8
-        ResBlk(C*8, C*16, downsample=False),  # 8x8
-        ResBlk(C*16, C*16, downsample=False),  # 8x8
+        ResBlk(C*1, C*2, downsample=True),      # 32x32
+        ResBlk(C*2, C*4, downsample=True),      # 16x16
+        ResBlk(C*4, C*8, downsample=True),      # 8x8
+        ResBlk(C*8, C*16, downsample=False),    # 8x8
+        ResBlk(C*16, C*16, downsample=False),   # 8x8
     ]
 
     gap_activ = activ_dispatch(gap_activ)

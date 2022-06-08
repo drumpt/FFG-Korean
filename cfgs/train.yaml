@@ -1,18 +1,18 @@
 use_ddp: True   # whether to use DataDistributedParallel, for multi-gpus.
-port: 9126 # the port for the DataDistributedParallel training.
+port: 9125 # the port for the DataDistributedParallel training.
 
-resume:
-work_dir: ./result_cl   # the directory to save checkpoints, validation images, and the log.
+resume: 
+work_dir: ./result_test   # the directory to save checkpoints, validation images, and the log.
 
 language: kor
 decomposition: data/korean_decomposition.json   # path to the "decomposition rule" file.
 primals: data/korean_primals.json   # path to the "primals" file.
 
-tensorboard_dir: /home/server08/changhun_workspace/FFG-Korean/result_cl/tensorboard_log
+tensorboard_dir: /home/server08/changhun_workspace/FFG-Korean/result/tensorboard_log
 
 dset:   # leave blank
   train:   # leave blank
     data_dir: data/ttfs/train   # path to .ttf files for the training
   val:   # leave blank
     data_dir: data/ttfs/val   # path to .ttf files for the validation
-    source_font: data/ttfs/val/나눔손글씨 고딕 아니고 고딩.ttf   # path to the .ttf file used as the source font during the validation
+    source_font: data/ttfs/val/나눔손글씨 또박또박.ttf   # path to the .ttf file used as the source font during the validation

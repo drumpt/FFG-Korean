@@ -38,19 +38,25 @@ class FactTrainer(BaseTrainer):
             self.disc.train()
 
         # loss stats
-        losses = utils.AverageMeters("g_total", "pixel", "disc", "gen", "fm", "indp_exp", "indp_fact",
+        if not self.cfg.use_consistent_loss:
+            losses = utils.AverageMeters("g_total", "pixel", "disc", "gen", "fm", "indp_exp", "indp_fact",
                                      "ac_s", "ac_c", "cross_ac_s", "cross_ac_c",
                                      "ac_gen_s", "ac_gen_c", "cross_ac_gen_s", "cross_ac_gen_c")
+        else:
+            losses = utils.AverageMeters("g_total", "pixel", "consistent", "disc", "gen", "fm", "indp_exp", "indp_fact",
+                                     "ac_s", "ac_c", "cross_ac_s", "cross_ac_c",
+                                     "ac_gen_s", "ac_gen_c", "cross_ac_gen_s", "cross_ac_gen_c")
+
         # discriminator stats
-        if self.cfg.g_args.dec.use_postnet:
+        if not self.cfg.g_args.dec.use_postnet:
+            discs = utils.AverageMeters("real_font", "real_uni", "fake_font", "fake_uni",
+                                        "real_font_acc", "real_uni_acc",
+                                        "fake_font_acc", "fake_uni_acc")
+        else:
             discs = utils.AverageMeters("real_font", "real_uni", "fake_font", "fake_uni", "before_fake_font", "before_fake_uni",
                                         "real_font_acc", "real_uni_acc",
                                         "fake_font_acc", "fake_uni_acc",
                                         "before_fake_font_acc", "before_fake_uni_acc")
-        else:
-            discs = utils.AverageMeters("real_font", "real_uni", "fake_font", "fake_uni",
-                                        "real_font_acc", "real_uni_acc",
-                                        "fake_font_acc", "fake_uni_acc")
 
         # etc stats
         stats = utils.AverageMeters("B", "ac_acc_s", "ac_acc_c", "ac_gen_acc_s", "ac_gen_acc_c")
@@ -64,6 +70,9 @@ class FactTrainer(BaseTrainer):
             epoch = self.step // len(loader)
             if self.cfg.use_ddp and (self.step % len(loader)) == 0:
                 loader.sampler.set_epoch(epoch)
+
+            print("batch.keys() : ")
+            print(batch.keys())
 
             if not self.cfg.ac_args.use_contrastive_learning:
                 style_imgs = batch["style_imgs"].cuda()
@@ -134,6 +143,14 @@ class FactTrainer(BaseTrainer):
                 trg_imgs, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
             )
 
+            # print(real_font.shape)
+            # print(real_uni.shape)
+            # print(real_feats.shape)
+
+            # print(real_font)
+            # print(real_uni)
+            # print(real_feats)
+
             fake_font, fake_uni = self.disc(
                 gen_imgs.detach(), trg_fids, trg_cids)
             self.add_gan_d_loss([real_font, real_uni], [fake_font, fake_uni])
@@ -142,6 +159,12 @@ class FactTrainer(BaseTrainer):
                 before_fake_font, before_fake_uni = self.disc(before_gen_imgs.detach(), trg_fids, trg_cids)
                 self.add_gan_d_loss([real_font, real_uni], [before_fake_font, before_fake_uni])
 
+            # with torch.autograd.set_detect_anomaly(True):
+            #     self.d_optim.zero_grad()
+            #     self.d_backward()
+            #     self.d_optim.step()
+
+            # with torch.autograd.set_detect_anomaly(True):
             self.d_optim.zero_grad()
             self.d_backward()
             self.d_optim.step()
@@ -158,6 +181,22 @@ class FactTrainer(BaseTrainer):
                 )
                 self.add_gan_g_loss(before_fake_font, before_fake_uni)
                 self.add_fm_loss(real_feats, before_fake_feats)
+
+            if self.cfg.use_consistent_loss:
+                gen_style_feats = self.gen.encode(torch.stack([gen_imgs] * n_s, dim=0).flatten(0, 1))
+                gen_char_feats = self.gen.encode(torch.stack([gen_imgs] * n_c, dim=0).flatten(0, 1))
+
+                gen_style_facts_s = self.gen.factorize(gen_style_feats, 0)
+                gen_char_facts_c = self.gen.factorize(gen_char_feats, 1)
+
+                gen_mean_style_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_s)).mean(1) for k, v in gen_style_facts_s.items()}
+                gen_mean_char_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_c)).mean(1) for k, v in gen_char_facts_c.items()}
+
+                for gen_mean_style_fact, mean_style_fact in zip(gen_mean_style_facts.values(), mean_style_facts.values()):
+                    self.add_consistent_loss(gen_mean_style_fact, mean_style_fact)
+
+                for gen_mean_char_fact, mean_char_fact in zip(gen_mean_char_facts.values(), mean_char_facts.values()):
+                    self.add_consistent_loss(gen_mean_char_fact, mean_char_fact)
 
             def racc(x):
                 return (x > 0.).float().mean().item()
@@ -197,6 +236,8 @@ class FactTrainer(BaseTrainer):
 
             self.add_pixel_loss(gen_imgs, trg_imgs)
 
+            # with torch.autograd.set_detect_anomaly(True):
+            #     self.g_optim.zero_grad()
             self.g_optim.zero_grad()
 
             self.add_ac_losses_and_update_stats(
@@ -209,6 +250,14 @@ class FactTrainer(BaseTrainer):
                 trg_decs,
                 stats
             )
+
+            # with torch.autograd.set_detect_anomaly(True):
+            #     self.ac_optim.zero_grad()
+            #     self.ac_backward()
+            #     self.ac_optim.step()
+
+            #     self.g_backward()
+            #     self.g_optim.step()
             self.ac_optim.zero_grad()
             self.ac_backward()
             self.ac_optim.step()
@@ -267,8 +316,12 @@ class FactTrainer(BaseTrainer):
         exps = [F.adaptive_avg_pool2d(exps[:, i], 1).squeeze() for i in range(exps.shape[1])]
         exp_pairs = [*combinations(exps, 2)]
 
+        # print("in add_indp_exp_loss : ")
+
         crit = RbfHSIC(1)
         for pair in exp_pairs:
+            # print(f"pair.shape in add_indp_exp_loss : {len(pair)}")
+            # print(pair[0].shape, pair[1].shape)
             self.add_loss(pair, self.g_losses, "indp_exp", self.cfg["indp_exp_w"], crit)
 
     def add_indp_fact_loss(self, *exp_pairs):
@@ -279,8 +332,12 @@ class FactTrainer(BaseTrainer):
                       for i in range(_exp1.shape[1])]
             pairs += _pairs
 
+        # print("in add_indp_fact_loss : ")
+
         crit = RbfHSIC(1)
         for pair in pairs:
+            # print(f"pair.shape in add_indp_fact_loss : {len(pair)}")
+            # print(pair[0].shape, pair[1].shape)
             self.add_loss(pair, self.g_losses, "indp_fact", self.cfg["indp_fact_w"], crit)
 
     def infer_comp_ac(self, fact_experts, comp_ids):
@@ -288,6 +345,10 @@ class FactTrainer(BaseTrainer):
 
         if not self.cfg.ac_args.use_contrastive_learning:
             ac_logit_s_flat, ac_logit_c_flat = self.aux_clf(fact_experts.flatten(0, 1))
+
+            # print(f"fact_experts : {fact_experts}")
+            # print(f"ac_logit_s_flat : {ac_logit_s_flat}")
+            # print(f"ac_logit_c_flat : {ac_logit_c_flat}")
 
             n_s = ac_logit_s_flat.shape[-1]
             ac_prob_s_flat = nn.Softmax(dim=-1)(ac_logit_s_flat)
@@ -300,9 +361,19 @@ class FactTrainer(BaseTrainer):
             ac_loss_c = torch.as_tensor(0.).cuda()
             accs = 0.
 
+            # print("\n\n\n\n\n\n\n\n")
+            # print(f"binary_comp_ids : {binary_comp_ids}")
+
             for _b_comp_id, _logit in zip(binary_comp_ids, ac_logit_c):
                 _prob = nn.Softmax(dim=-1)(_logit)  # (n_exp, n_comp)
                 T_probs = _prob.T[_b_comp_id].detach().cpu()  # (n_T, n_exp)
+
+                # print(f"_b_comp_id : {_b_comp_id}")
+                # print(f"_logit : {_logit}")
+                # print(f"_prob : {_prob}")
+                # print(f"T_probs : {T_probs}")
+                # print("\n\n\n")
+
                 cids, eids = expert_assign(T_probs)
                 _max_ids = torch.where(_b_comp_id)[0][cids]
                 ac_loss_c += F.cross_entropy(_logit[eids], _max_ids)
@@ -391,6 +462,8 @@ class FactTrainer(BaseTrainer):
             'train/indp_exp_loss': losses.indp_exp.val,
             'train/indp_fact_loss': losses.indp_fact.val,
         }
+        if self.cfg.use_consistent_loss:
+            tag_scalar_dic["train/consistent_loss"] = losses.consistent.val
 
         if self.disc is not None:
             tag_scalar_dic.update({
@@ -431,6 +504,7 @@ class FactTrainer(BaseTrainer):
         self.writer.add_scalars(tag_scalar_dic, self.step)
 
     def log(self, L, D, S):
+        
         self.logger.info(
             f"Step {self.step:7d}\n"
             f"{'|D':<12} {L.disc.avg:7.3f} {'|G':<12} {L.gen.avg:7.3f} {'|FM':<12} {L.fm.avg:7.3f} {'|R_font':<12} {D.real_font_acc.avg:7.3f} {'|F_font':<12} {D.fake_font_acc.avg:7.3f} {'|R_uni':<12} {D.real_uni_acc.avg:7.3f} {'|F_uni':<12} {D.fake_uni_acc.avg:7.3f}\n"

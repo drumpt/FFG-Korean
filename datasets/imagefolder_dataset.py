@@ -15,11 +15,14 @@ from .ttf_utils import get_filtered_chars, read_font, render
 
 
 class ImageTestDataset(Dataset):
-    def __init__(self, data_dir, source_font, gen_chars_file=None, transform=None, extension="png"):
-
+    def __init__(self, data_dir, source_font, gen_chars_file=None, use_target_file=False, transform=None, extension="png"):
         self.data_dir = Path(data_dir)
         self.source_font = read_font(source_font)
         self.gen_chars = get_filtered_chars(source_font)
+
+        self.source_font_dir = source_font
+        self.use_target_file = use_target_file
+
         if gen_chars_file is not None:
             gen_chars = json.load(open(gen_chars_file))
             self.gen_chars = list(set(self.gen_chars).intersection(set(gen_chars)))
@@ -52,6 +55,14 @@ class ImageTestDataset(Dataset):
             "chars": char,
         }
 
+        if self.use_target_file:
+            ttf_filename = Path(self.source_font_dir).stem
+            target_font_dir = self.source_font_dir.replace(ttf_filename, font)
+            target_font = read_font(target_font_dir)
+
+            target_img = self.transform(render(target_font, char))
+            ret["target_imgs"] = target_img
+
         return ret
 
     def __len__(self):
@@ -68,6 +79,7 @@ class ImageTestDataset(Dataset):
         ret = {
             "style_imgs": torch.stack(_ret["style_imgs"]),
             "source_imgs": torch.stack(_ret["source_imgs"]),
+            "target_imgs": torch.stack(_ret["target_imgs"]),
             "fonts": _ret["fonts"],
             "chars": _ret["chars"],
         }
