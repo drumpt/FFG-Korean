@@ -98,7 +98,7 @@ def disc_builder(C, n_fonts, n_chars, patchgan=False, activ='relu', gap_activ='r
 
     gap_activ = activ_dispatch(gap_activ)
 
-    if not patchgan:
+    if patchgan:
         gaps = [
             gap_activ()
         ]
