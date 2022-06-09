@@ -130,7 +130,7 @@ def train(args, cfg, ddp_gpu=-1):
                                           num_workers=cfg.n_workers,
                                           shuffle=True)
 
-    test_dset, test_loader = get_val_loader(cfg.dset.val,
+    _, val_loader = get_val_loader(cfg.dset.val,
                                             val_transform,
                                             batch_size=cfg.batch_size,
                                             num_workers=cfg.n_workers,
@@ -166,7 +166,7 @@ def train(args, cfg, ddp_gpu=-1):
     trainer = FactTrainer(gen, disc, g_optim, d_optim,
                           aux_clf, ac_optim,
                           writer, logger,
-                          evaluator, test_loader,
+                          evaluator, val_loader,
                           cfg)
 
     trainer.train(trn_loader, st_step, cfg.max_iter)

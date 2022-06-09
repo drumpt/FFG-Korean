@@ -85,12 +85,12 @@ def eval_metric(args, left_argv):
             path = img_dir / font / f"{char}.png"
             save_tensor_to_image(image, path)
 
-        l1_loss_batch, rmse_batch, ssim_batch, lpips_batch = metric(target_imgs, out)
+        metrics = metric(target_imgs, out)
 
-        total_l1_loss += sum(l1_loss_batch)
-        total_rmse += sum(rmse_batch)
-        total_ssim += sum(ssim_batch)
-        total_lpips += sum(lpips_batch)
+        total_l1_loss += sum(metrics["l1_loss"])
+        total_rmse += sum(metrics["rmse"])
+        total_ssim += sum(metrics["ssim"])
+        total_lpips += sum(metrics["lpips"])
         num_out += len(batch)
 
         del style_imgs, char_imgs, target_imgs, out

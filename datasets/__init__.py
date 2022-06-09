@@ -6,7 +6,7 @@ MIT license
 
 import torch
 
-from .imagefolder_dataset import ImageTestDataset
+from .imagefolder_dataset import ImageTestDataset, ImageEvalDataset
 from .ttf_dataset import TTFTrainDataset, TTFValDataset
 from .ttf_utils import get_filtered_chars, read_font, render
 from torch.utils.data import DataLoader
@@ -48,6 +48,10 @@ def get_test_loader(cfg, transform, **kwargs):
         transform=transform,
         **cfg.dset.test,
     )
+    # dset = ImageEvalDataset(
+    #     transform=transform,
+    #     **cfg.dset.test,
+    # )
     loader = DataLoader(dset, batch_size=cfg.batch_size, collate_fn=dset.collate_fn, **kwargs)
 
     return dset, loader
