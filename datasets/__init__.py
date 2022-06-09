@@ -44,14 +44,14 @@ def get_val_loader(cfg, transform, **kwargs):
 
 
 def get_test_loader(cfg, transform, **kwargs):
-    dset = ImageTestDataset(
-        transform=transform,
-        **cfg.dset.test,
-    )
-    # dset = ImageEvalDataset(
+    # dset = ImageTestDataset(
     #     transform=transform,
     #     **cfg.dset.test,
     # )
+    dset = ImageEvalDataset(
+        transform=transform,
+        **cfg.dset.test,
+    )
     loader = DataLoader(dset, batch_size=cfg.batch_size, collate_fn=dset.collate_fn, **kwargs)
 
     return dset, loader

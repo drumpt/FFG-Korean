@@ -8,8 +8,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from skimage.metrics import structural_similarity
-from lpips_pytorch import lpips
+from IQA_pytorch import SSIM
+import lpips
 
 import utils
 
@@ -62,31 +62,40 @@ class Evaluator:
         return ret
 
 
-# class Metric(nn.Module):
-#     def __init__(self):
-#         super().__init__()
+class Metric(nn.Module):
+    def __init__(self):
+        super().__init__()
 
-#         self.l1_loss = nn.L1Loss().cuda()
+        self.l1 = nn.L1Loss()
+        self.mse = nn.MSELoss()
+        self.ssim = SSIM(channels=3)
+        self.lpips = lpips.LPIPS(net='alex')
 
-#     def forward(self, gt_batch, gen_batch):
-#         l1_loss_batch, score_RMSE_batch, ssim_batch, score_lpips_batch = [], [], [], []
+    def forward(self, gt_batch, gen_batch):
+        l1_loss_batch, rmse_batch, lpips_batch = [], [], []
 
-#         for gt_img, gen_img in zip(gt_batch, gen_batch):
-#             l1_loss = self.l1_loss(gt_img, gen_img)
-#             score_RMSE = torch.sqrt(torch.mean((gt_img - gen_img) ** 2))
-#             ssim = structural_similarity(np.array(gt_img.squeeze().detach().cpu() * 255), np.array(gen_img.squeeze().detach().cpu() * 255))
-#             score_lpips = lpips(gt_img, gen_img, net_type='alex', version='0.1')
+        # convert grayscale to RGB image
+        if gt_batch.shape[1] == 1:
+            gt_batch = torch.cat([gt_batch for _ in range(3)], dim=1)
+        if gen_batch.shape[1] == 1:
+            gen_batch = torch.cat([gen_batch for _ in range(3)], dim=1)
 
-#             l1_loss_batch.append(l1_loss.item())
-#             score_RMSE_batch.append(score_RMSE.item())
-#             ssim_batch.append(ssim.item())
-#             score_lpips_batch.append(score_lpips.item())
+        for gt_img, gen_img in zip(gt_batch, gen_batch):
+            l1_loss = self.l1(gt_img, gen_img)
+            rmse = torch.sqrt(self.mse(gt_img, gen_img))
+            lpips = self.lpips((2 * gt_img - 1).cpu(), (2 * gen_img - 1).cpu())
 
-#         result = {
-#             "l1_loss": l1_loss_batch,
-#             "rmse": score_RMSE_batch,
-#             "ssim": ssim_batch,
-#             "lpips": score_lpips_batch
-#         }
+            l1_loss_batch.append(l1_loss.item())
+            rmse_batch.append(rmse.item())
+            lpips_batch.append(lpips.item())
 
-#         return result
+        ssim_batch = self.ssim(gt_batch, gen_batch, as_loss=False).tolist()
+
+        result = {
+            "l1_loss": l1_loss_batch,
+            "rmse": rmse_batch,
+            "ssim": ssim_batch,
+            "lpips": lpips_batch
+        }
+
+        return result

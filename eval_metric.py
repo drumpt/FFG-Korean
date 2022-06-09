@@ -85,13 +85,13 @@ def eval_metric(args, left_argv):
             path = img_dir / font / f"{char}.png"
             save_tensor_to_image(image, path)
 
-        metrics = metric(target_imgs, out)
+        eval_metric = metric(target_imgs, out)
 
-        total_l1_loss += sum(metrics["l1_loss"])
-        total_rmse += sum(metrics["rmse"])
-        total_ssim += sum(metrics["ssim"])
-        total_lpips += sum(metrics["lpips"])
-        num_out += len(batch)
+        total_l1_loss += sum(eval_metric["l1_loss"])
+        total_rmse += sum(eval_metric["rmse"])
+        total_ssim += sum(eval_metric["ssim"])
+        total_lpips += sum(eval_metric["lpips"])
+        num_out += len(style_imgs)
 
         del style_imgs, char_imgs, target_imgs, out
 
@@ -100,7 +100,7 @@ def eval_metric(args, left_argv):
     ssim = total_ssim / num_out
     lpips = total_lpips / num_out
 
-    print(f"Final Result\nl1_loss : {l1_loss}\nRMSE : {rmse}\nssim : {ssim}\nlpips : {lpips}")
+    print(f"Final Result\nl1_loss : {l1_loss}\nRMSE : {rmse}\nssim : {ssim}\nlpips : {lpips}\n")
 
 
 if __name__ == "__main__":
