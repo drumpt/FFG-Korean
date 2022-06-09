@@ -1,5 +1,7 @@
 **/__pycache__/
 data/**/*.ttf
 data/**/*.txt
-result/
+data/images/*
+result*/
+eval*/
 previous_results/
