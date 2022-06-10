@@ -33,7 +33,7 @@ class AuxClassifier(nn.Module):
         return logit_s, logit_c
 
 
-def aux_clf_builder(in_shape, num_s, num_c, norm='IN', gap_size=8, activ='relu', pad_type='reflect',
+def aux_clf_builder(in_shape, num_s, num_c, use_contrastive_learning, temperature, norm='IN', gap_size=8, activ='relu', pad_type='reflect',
                     conv_dropout=0., clf_dropout=0., last_type="linear", w_norm="spectral", cam=False):
 
     ResBlk = partial(ResBlock, norm=norm, activ=activ, pad_type=pad_type, dropout=conv_dropout)

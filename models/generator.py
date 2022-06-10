@@ -81,6 +81,7 @@ class Generator(nn.Module):
 
     def gen_from_style_char(self, style_imgs, char_imgs):
         B = len(style_imgs)
+
         style_facts = self.factorize(self.encode(style_imgs.flatten(0, 1)), 0)
         char_facts = self.factorize(self.encode(char_imgs.flatten(0, 1)), 1)
 

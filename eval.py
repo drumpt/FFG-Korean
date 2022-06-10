@@ -28,7 +28,7 @@ def eval_ckpt():
     img_dir = Path(args.result_dir)
     img_dir.mkdir(parents=True, exist_ok=True)
 
-    trn_transform, val_transform = setup_transforms(cfg)
+    _, val_transform = setup_transforms(cfg)
 
     g_kwargs = cfg.get('g_args', {})
     gen = Generator(1, cfg.C, 1, **g_kwargs).cuda()
@@ -37,7 +37,7 @@ def eval_ckpt():
     if "generator_ema" in weight:
         weight = weight["generator_ema"]
     gen.load_state_dict(weight)
-    test_dset, test_loader = get_test_loader(cfg, val_transform)
+    _, test_loader = get_test_loader(cfg, val_transform)
 
     for batch in test_loader:
         style_imgs = batch["style_imgs"].cuda()

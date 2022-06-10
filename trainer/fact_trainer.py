@@ -7,11 +7,13 @@ MIT license
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision import transforms
 
 from .base_trainer import BaseTrainer
 from .trainer_utils import cyclize, binarize_labels, expert_assign
 from .hsic import RbfHSIC
 
+import random
 import utils
 from itertools import combinations
 
@@ -38,16 +40,23 @@ class FactTrainer(BaseTrainer):
         # loss stats
         if not self.cfg.use_consistent_loss:
             losses = utils.AverageMeters("g_total", "pixel", "disc", "gen", "fm", "indp_exp", "indp_fact",
-                                    "ac_s", "ac_c", "cross_ac_s", "cross_ac_c",
-                                    "ac_gen_s", "ac_gen_c", "cross_ac_gen_s", "cross_ac_gen_c")
+                                     "ac_s", "ac_c", "cross_ac_s", "cross_ac_c",
+                                     "ac_gen_s", "ac_gen_c", "cross_ac_gen_s", "cross_ac_gen_c")
         else:
             losses = utils.AverageMeters("g_total", "pixel", "consistent", "disc", "gen", "fm", "indp_exp", "indp_fact",
-                                    "ac_s", "ac_c", "cross_ac_s", "cross_ac_c",
-                                    "ac_gen_s", "ac_gen_c", "cross_ac_gen_s", "cross_ac_gen_c")
+                                     "ac_s", "ac_c", "cross_ac_s", "cross_ac_c",
+                                     "ac_gen_s", "ac_gen_c", "cross_ac_gen_s", "cross_ac_gen_c")
+
         # discriminator stats
-        discs = utils.AverageMeters("real_font", "real_uni", "fake_font", "fake_uni",
-                                    "real_font_acc", "real_uni_acc",
-                                    "fake_font_acc", "fake_uni_acc")
+        if not self.cfg.g_args.dec.use_postnet:
+            discs = utils.AverageMeters("real_font", "real_uni", "fake_font", "fake_uni",
+                                        "real_font_acc", "real_uni_acc",
+                                        "fake_font_acc", "fake_uni_acc")
+        else:
+            discs = utils.AverageMeters("real_font", "real_uni", "fake_font", "fake_uni", "before_fake_font", "before_fake_uni",
+                                        "real_font_acc", "real_uni_acc",
+                                        "fake_font_acc", "fake_uni_acc",
+                                        "before_fake_font_acc", "before_fake_uni_acc")
 
         # etc stats
         stats = utils.AverageMeters("B", "ac_acc_s", "ac_acc_c", "ac_gen_acc_s", "ac_gen_acc_c")
@@ -62,18 +71,32 @@ class FactTrainer(BaseTrainer):
             if self.cfg.use_ddp and (self.step % len(loader)) == 0:
                 loader.sampler.set_epoch(epoch)
 
-            style_imgs = batch["style_imgs"].cuda()
-            style_fids = batch["style_fids"].cuda()
-            style_decs = batch["style_decs"]
+            if not self.cfg.ac_args.use_contrastive_learning:
+                style_imgs = batch["style_imgs"].cuda()
+                style_fids = batch["style_fids"].cuda()
+                style_decs = batch["style_decs"]
 
-            char_imgs = batch["char_imgs"].cuda()
-            char_fids = batch["char_fids"].cuda()
-            char_decs = batch["char_decs"]
+                char_imgs = batch["char_imgs"].cuda()
+                char_fids = batch["char_fids"].cuda()
+                char_decs = batch["char_decs"]
 
-            trg_imgs = batch["trg_imgs"].cuda()
-            trg_fids = batch["trg_fids"].cuda()
-            trg_cids = batch["trg_cids"].cuda()
-            trg_decs = batch["trg_decs"]
+                trg_imgs = batch["trg_imgs"].cuda()
+                trg_fids = batch["trg_fids"].cuda()
+                trg_cids = batch["trg_cids"].cuda()
+                trg_decs = batch["trg_decs"]
+            else:
+                style_imgs = self.apply_random_augmentations(batch["style_imgs"]).cuda()
+                style_fids = torch.cat([batch["style_fids"], batch["style_fids"]]).cuda()
+                style_decs = batch["style_decs"] * 2
+
+                char_imgs = self.apply_random_augmentations(batch["char_imgs"]).cuda()
+                char_fids = torch.cat([batch["char_fids"], batch["char_fids"]]).cuda()
+                char_decs = batch["char_decs"] * 2
+
+                trg_imgs = self.apply_random_augmentations(batch["trg_imgs"]).squeeze(dim=2).cuda()
+                trg_fids = torch.cat([batch["trg_fids"], batch["trg_fids"]]).cuda()
+                trg_cids = torch.cat([batch["trg_cids"], batch["trg_cids"]]).cuda()
+                trg_decs = batch["trg_decs"] * 2
 
             ##############################################################
             # infer
@@ -103,7 +126,11 @@ class FactTrainer(BaseTrainer):
             mean_style_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_s)).mean(1) for k, v in style_facts_s.items()}
             mean_char_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_c)).mean(1) for k, v in char_facts_c.items()}
             gen_feats = self.gen.defactorize([mean_style_facts, mean_char_facts])
-            gen_imgs = self.gen.decode(gen_feats)
+
+            if self.cfg.g_args.dec.use_postnet:
+                before_gen_imgs, gen_imgs = self.gen.decode(gen_feats)
+            else:
+                gen_imgs = self.gen.decode(gen_feats)
 
             stats.updates({
                 "B": B,
@@ -133,6 +160,16 @@ class FactTrainer(BaseTrainer):
 
                 self.add_gan_d_loss([real_font, real_uni], [fake_font, fake_uni])
 
+            if self.cfg.g_args.dec.use_postnet:
+                before_fake_font, before_fake_uni = self.disc(before_gen_imgs.detach(), trg_fids, trg_cids)
+                self.add_gan_d_loss([real_font, real_uni], [before_fake_font, before_fake_uni])
+
+            # with torch.autograd.set_detect_anomaly(True):
+            #     self.d_optim.zero_grad()
+            #     self.d_backward()
+            #     self.d_optim.step()
+
+            # with torch.autograd.set_detect_anomaly(True):
             self.d_optim.zero_grad()
             self.d_backward()
             self.d_optim.step()
@@ -188,6 +225,29 @@ class FactTrainer(BaseTrainer):
                 for gen_mean_char_fact, mean_char_fact in zip(gen_mean_char_facts.values(), mean_char_facts.values()):
                     self.add_consistent_loss(gen_mean_char_fact, mean_char_fact)
 
+            if self.cfg.g_args.dec.use_postnet:
+                before_fake_font, before_fake_uni, *before_fake_feats = self.disc(
+                    before_gen_imgs, trg_fids, trg_cids, out_feats=self.cfg['fm_layers']
+                )
+                self.add_gan_g_loss(before_fake_font, before_fake_uni)
+                self.add_fm_loss(real_feats, before_fake_feats)
+
+            if self.cfg.use_consistent_loss:
+                gen_style_feats = self.gen.encode(torch.stack([gen_imgs] * n_s, dim=0).flatten(0, 1))
+                gen_char_feats = self.gen.encode(torch.stack([gen_imgs] * n_c, dim=0).flatten(0, 1))
+
+                gen_style_facts_s = self.gen.factorize(gen_style_feats, 0)
+                gen_char_facts_c = self.gen.factorize(gen_char_feats, 1)
+
+                gen_mean_style_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_s)).mean(1) for k, v in gen_style_facts_s.items()}
+                gen_mean_char_facts = {k: utils.add_dim_and_reshape(v, 0, (-1, n_c)).mean(1) for k, v in gen_char_facts_c.items()}
+
+                for gen_mean_style_fact, mean_style_fact in zip(gen_mean_style_facts.values(), mean_style_facts.values()):
+                    self.add_consistent_loss(gen_mean_style_fact, mean_style_fact)
+
+                for gen_mean_char_fact, mean_char_fact in zip(gen_mean_char_facts.values(), mean_char_facts.values()):
+                    self.add_consistent_loss(gen_mean_char_fact, mean_char_fact)
+
             def racc(x):
                 return (x > 0.).float().mean().item()
 
@@ -206,6 +266,23 @@ class FactTrainer(BaseTrainer):
                     'fake_font_acc': facc(fake_font),
                     'fake_uni_acc': facc(fake_uni)
                 }, B)
+            elif self.cfg.g_args.dec.use_postnet:
+                discs.updates({
+                    "real_font": real_font.mean().item(),
+                    "real_uni": real_uni.mean().item(),
+                    "fake_font": fake_font.mean().item(),
+                    "fake_uni": fake_uni.mean().item(),
+                    "before_fake_font": before_fake_font.mean().item(),
+                    "before_fake_uni": before_fake_uni.mean().item(),
+
+                    'real_font_acc': racc(real_font),
+                    'real_uni_acc': racc(real_uni),
+                    'fake_font_acc': facc(fake_font),
+                    'fake_uni_acc': facc(fake_uni),
+                    'before_fake_font_acc': facc(before_fake_font),
+                    'before_fake_uni_acc': facc(before_fake_uni),
+                }, B)
+                self.add_pixel_loss(before_gen_imgs, trg_imgs)
             else:
                 discs.updates({
                     "real_font": real_font.mean().item(),
@@ -233,6 +310,7 @@ class FactTrainer(BaseTrainer):
                 trg_decs,
                 stats
             )
+
             self.ac_optim.zero_grad()
             self.ac_backward()
             self.ac_optim.step()
@@ -310,32 +388,59 @@ class FactTrainer(BaseTrainer):
     def infer_comp_ac(self, fact_experts, comp_ids):
         B, n_experts = fact_experts.shape[:2]
 
-        ac_logit_s_flat, ac_logit_c_flat = self.aux_clf(fact_experts.flatten(0, 1))
+        if not self.cfg.ac_args.use_contrastive_learning:
+            ac_logit_s_flat, ac_logit_c_flat = self.aux_clf(fact_experts.flatten(0, 1))
 
-        n_s = ac_logit_s_flat.shape[-1]
-        ac_prob_s_flat = nn.Softmax(dim=-1)(ac_logit_s_flat)
-        uniform_dist_s = torch.zeros_like(ac_prob_s_flat).fill_((1./n_s)).cuda()
-        uniform_loss_s = F.kl_div(ac_prob_s_flat, uniform_dist_s, reduction="batchmean")  # causes increasing weight norm ; to be modified
+            n_s = ac_logit_s_flat.shape[-1]
+            ac_prob_s_flat = nn.Softmax(dim=-1)(ac_logit_s_flat)
+            uniform_dist_s = torch.zeros_like(ac_prob_s_flat).fill_((1./n_s)).cuda()
+            uniform_loss_s = F.kl_div(ac_prob_s_flat, uniform_dist_s, reduction="batchmean")  # causes increasing weight norm ; to be modified
 
-        ac_logit_c = ac_logit_c_flat.reshape((B, n_experts, -1))  # (bs, n_exp, n_comps)
-        n_comps = ac_logit_c.shape[-1]
-        binary_comp_ids = binarize_labels(comp_ids, n_comps).cuda()
-        ac_loss_c = torch.as_tensor(0.).cuda()
-        accs = 0.
+            ac_logit_c = ac_logit_c_flat.reshape((B, n_experts, -1)) # (bs, n_exp, n_comps)
+            n_comps = ac_logit_c.shape[-1]
+            binary_comp_ids = binarize_labels(comp_ids, n_comps).cuda()
+            ac_loss_c = torch.as_tensor(0.).cuda()
+            accs = 0.
 
-        for _b_comp_id, _logit in zip(binary_comp_ids, ac_logit_c):
-            _prob = nn.Softmax(dim=-1)(_logit)  # (n_exp, n_comp)
-            T_probs = _prob.T[_b_comp_id].detach().cpu()  # (n_T, n_exp)
-            cids, eids = expert_assign(T_probs)
-            _max_ids = torch.where(_b_comp_id)[0][cids]
-            ac_loss_c += F.cross_entropy(_logit[eids], _max_ids)
-            acc = T_probs[cids, eids].sum() / n_experts
-            accs += acc
+            for _b_comp_id, _logit in zip(binary_comp_ids, ac_logit_c):
+                _prob = nn.Softmax(dim=-1)(_logit)  # (n_exp, n_comp)
+                T_probs = _prob.T[_b_comp_id].detach().cpu()  # (n_T, n_exp)
 
-        ac_loss_c /= B
-        accs /= B
+                cids, eids = expert_assign(T_probs)
+                _max_ids = torch.where(_b_comp_id)[0][cids]
+                ac_loss_c += F.cross_entropy(_logit[eids], _max_ids)
+                acc = T_probs[cids, eids].sum() / n_experts
+                accs += acc
 
-        return ac_loss_c, uniform_loss_s, accs.item()
+            ac_loss_c /= B
+            accs /= B
+            return ac_loss_c, uniform_loss_s, accs.item()
+        else:
+            ac_logit_s_flat, ac_logit_c_flat = self.aux_clf(fact_experts.flatten(0, 1))
+
+            n_s = ac_logit_s_flat.shape[-1]
+            ac_prob_s_flat = nn.Softmax(dim=-1)(ac_logit_s_flat)
+            uniform_dist_s = torch.zeros_like(ac_prob_s_flat).fill_((1./n_s)).cuda()
+            uniform_loss_s = F.kl_div(ac_prob_s_flat, uniform_dist_s, reduction="batchmean")  # causes increasing weight norm ; to be modified
+
+            ac_logit_c = ac_logit_c_flat.reshape((B, n_experts, -1))  # (bs, n_exp, n_comps)
+            ac_loss_c = 0.
+            accs = 0.
+
+            for ac_logit_c_per_expert in ac_logit_c.permute(1, 0, 2):
+                cos_sim = F.cosine_similarity(ac_logit_c_per_expert[:, None, :], ac_logit_c_per_expert[None, :, :], dim=-1).cuda()
+                sim_ij = torch.diag(cos_sim, B // 2)
+                sim_ji = torch.diag(cos_sim, -B // 2)
+
+                positive = torch.cat([sim_ij, sim_ji], dim=0)
+                mask = (~torch.eye(B, B, dtype=bool)).float().cuda()
+
+                numerator = torch.exp(positive / self.cfg.ac_args.temperature)
+                denominator = mask * torch.exp(cos_sim / self.cfg.ac_args.temperature)
+
+                all_losses = -torch.log(numerator / torch.sum(denominator, dim=-1))
+                ac_loss_c += torch.sum(all_losses) / B
+            return ac_loss_c, uniform_loss_s, accs
 
     def infer_style_ac(self, fact_experts, style_ids):
         B, n_experts = fact_experts.shape[:2]
@@ -431,6 +536,7 @@ class FactTrainer(BaseTrainer):
         self.writer.add_scalars(tag_scalar_dic, self.step)
 
     def log(self, L, D, S):
+        
         self.logger.info(
             f"Step {self.step:7d}\n"
             f"{'|D':<12} {L.disc.avg:7.3f} {'|G':<12} {L.gen.avg:7.3f} {'|FM':<12} {L.fm.avg:7.3f} {'|R_font':<12} {D.real_font_acc.avg:7.3f} {'|F_font':<12} {D.fake_font_acc.avg:7.3f} {'|R_uni':<12} {D.real_uni_acc.avg:7.3f} {'|F_uni':<12} {D.fake_uni_acc.avg:7.3f}\n"
@@ -438,3 +544,32 @@ class FactTrainer(BaseTrainer):
             f"{'|AC_g_s':<12} {L.ac_gen_s.avg:7.3f} {'|AC_g_c':<12} {L.ac_gen_c.avg:7.3f} {'|cr_AC_g_s':<12} {L.cross_ac_gen_s.avg:7.3f} {'|cr_AC_g_c':<12} {L.cross_ac_gen_c.avg:7.3f} {'|AC_g_acc_s':<12} {S.ac_gen_acc_s.avg:7.1%} {'|AC_g_acc_c':<12} {S.ac_gen_acc_c.avg:7.1%}\n"
             f"{'|L1':<12} {L.pixel.avg:7.3f} {'|INDP_EXP':<12} {L.indp_exp.avg:7.4f} {'|INDP_FACT':<12} {L.indp_fact.avg:7.4f}"
         )
+    
+    def apply_random_augmentations(self, batch):
+        result = []
+        augmentations = [
+            [
+                transforms.ToPILImage(),
+                transforms.GaussianBlur(kernel_size=(5,9), sigma=(0.1, 2.0))
+            ],
+            [
+                transforms.ToPILImage(),
+                transforms.RandomRotation(degrees=20, fill=255)
+            ]
+        ]
+        tensorize_transform = [
+            transforms.Resize((128, 128)),
+            transforms.ToTensor()
+        ]
+        if self.cfg.dset_aug.normalize:
+            tensorize_transform.append(transforms.Normalize([0.5], [0.5]))
+
+        for _ in range(2): # apply two augmentations to each image
+            for i in range(batch.shape[0]):
+                result_j = []
+                for j in range(batch.shape[1]):
+                    img = batch[i][j]
+                    augmentation = transforms.Compose(random.choice(augmentations) + tensorize_transform)
+                    result_j.append(augmentation(0.5 * img + 0.5))
+                result.append(torch.cat(result_j).unsqueeze(1).unsqueeze(0))
+        return torch.cat(result)

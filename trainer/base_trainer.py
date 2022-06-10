@@ -87,9 +87,17 @@ class BaseTrainer:
         return
 
     def add_loss(self, inputs, l_dict, l_key, weight, crit=F.l1_loss):
+        # print(f"inputs : {inputs}")
+        # print(f"l_dict : {l_dict}")
+        # print(f"l_key : {l_key}")
+        # print(f"weight : {weight}")
+        # print(f"crit : {crit}")
+
         loss = l_dict.get(l_key, 0.)
         loss += crit(*inputs) * weight
         l_dict[l_key] = loss
+
+        # print(f"loss : {loss}")
 
         return loss
 

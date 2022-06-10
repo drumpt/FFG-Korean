@@ -49,9 +49,12 @@ def decompose(char):
     return char_id
 
 
-def get_all_chars(txt_dir):
+def get_all_chars(txt_dir, gen=False):
     with open(txt_dir) as f:
-        all_chars = f.readlines()[0]
+        if not gen:
+            all_chars = f.readlines()[0]
+        else:
+            all_chars = f.read().splitlines()
     return all_chars
 
 
