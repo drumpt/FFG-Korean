@@ -57,7 +57,7 @@ g_args:
     activ: relu
     pad_type: zero
     out: sigmoid
-    use_postnet: True
+    use_postnet: False
 d_args:
   w_norm: spectral
   activ: relu
